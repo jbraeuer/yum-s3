@@ -7,7 +7,7 @@
 Summary: RPM package installer/updater/manager
 Name: yum
 Version: 3.2.29
-Release: 17%{?dist}
+Release: 4001%{?dist}
 License: GPLv2+
 Group: System Environment/Base
 Source0: http://yum.baseurl.org/download/3.2/%{name}-%{version}.tar.gz
