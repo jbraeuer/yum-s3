@@ -1,0 +1,30 @@
+commit a59998942224a36f62ba3a4247bd8f2dc92eceab
+Author: James Antill <james@and.org>
+Date:   Thu Mar 10 13:43:35 2011 -0500
+
+    Don't update-install same version diff. arch local pkgs.
+
+diff --git a/yum/__init__.py b/yum/__init__.py
+index 5c44245..36fc203 100644
+--- a/yum/__init__.py
++++ b/yum/__init__.py
+@@ -3956,11 +3956,17 @@ class YumBase(depsolve.Depsolve):
+                 if (po.arch != installed_pkg.arch and
+                     (isMultiLibArch(po.arch) or
+                      isMultiLibArch(installed_pkg.arch))):
+-                    installpkgs.append(po)
++                    if updateonly:
++                        self.logger.warning(_('Package %s.%s not installed, cannot update it. Run yum install to install it instead.'), po.name, po.arch)
++                    else:
++                        installpkgs.append(po)
+                 else:
+                     donothingpkgs.append(po)
+             elif self.allowedMultipleInstalls(po):
+-                installpkgs.append(po)
++                if updateonly:
++                    self.logger.warning(_('Package %s.%s not installed, cannot update it. Run yum install to install it instead.'), po.name, po.arch)
++                else:
++                    installpkgs.append(po)
+             else:
+                 donothingpkgs.append(po)
+ 

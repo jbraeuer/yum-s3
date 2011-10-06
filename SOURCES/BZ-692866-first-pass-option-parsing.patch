@@ -1,0 +1,79 @@
+commit f5ff40328625ed234f130591f4789fbb834b722f
+Author: James Antill <james@and.org>
+Date:   Fri Apr 1 10:25:19 2011 -0400
+
+    Don't display the 'Ignore option' warning with --version. BZ 692866.
+
+diff --git a/cli.py b/cli.py
+index 1b7d7e6..dd6f5c7 100644
+--- a/cli.py
++++ b/cli.py
+@@ -256,6 +256,10 @@ class YumBaseCli(yum.YumBase, output.YumOutput):
+         # apply some of the options to self.conf
+         (opts, self.cmds) = self.optparser.setupYumConfig(args=args)
+ 
++        if opts.version:
++            opts.quiet = True
++            opts.verbose = False
++
+         #  Check that firstParse didn't miss anything, and warn the user if it
+         # did ... because this is really magic, and unexpected.
+         if opts.quiet:
+commit c8fe26559b13161c4407562e370aad14e9816e9a
+Author: James Antill <james@and.org>
+Date:   Fri Apr 1 13:46:34 2011 -0400
+
+    Make -- work with firstParse. Eg. "install -- emacs -emacs"
+
+diff --git a/cli.py b/cli.py
+index dd6f5c7..b0a6292 100644
+--- a/cli.py
++++ b/cli.py
+@@ -1434,7 +1434,8 @@ class YumOptionParser(OptionParser):
+                          '-e', '--errorlevel',
+                          '--installroot',
+                          '--disableplugin', '--enableplugin', '--releasever',
+-                         '--setopt'), 
++                         '--setopt',
++                         '--'),
+                         args)
+         except ValueError, arg:
+             self.base.usage()
+commit e9d54472348e8f82cf816d21ae2761733e56b2d8
+Author: James Antill <james@and.org>
+Date:   Thu Apr 7 15:08:18 2011 -0400
+
+     Make -- work with firstParse, without breaking other options. BZ 694394.
+
+diff --git a/cli.py b/cli.py
+index b0a6292..aefb841 100644
+--- a/cli.py
++++ b/cli.py
+@@ -1434,8 +1434,7 @@ class YumOptionParser(OptionParser):
+                          '-e', '--errorlevel',
+                          '--installroot',
+                          '--disableplugin', '--enableplugin', '--releasever',
+-                         '--setopt',
+-                         '--'),
++                         '--setopt'),
+                         args)
+         except ValueError, arg:
+             self.base.usage()
+@@ -1699,6 +1698,7 @@ def _filtercmdline(novalopts, valopts, args):
+ 
+     Will raise ValueError if there was a problem parsing the command line.
+     '''
++    # ' xemacs syntax hack
+     out = []
+     args = list(args)       # Make a copy because this func is destructive
+ 
+@@ -1709,6 +1709,9 @@ def _filtercmdline(novalopts, valopts, args):
+             if opt in valopts:
+                 out.append(a)
+ 
++        elif a == '--':
++            out.append(a)
++
+         elif a in novalopts:
+             out.append(a)
+ 

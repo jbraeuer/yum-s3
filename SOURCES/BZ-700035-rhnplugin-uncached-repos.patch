@@ -1,0 +1,16 @@
+diff -ru yum-3.2.29-orig/yumcommands.py yum-3.2.29/yumcommands.py
+--- yum-3.2.29-orig/yumcommands.py	2011-04-28 09:40:25.737582856 -0400
++++ yum-3.2.29/yumcommands.py	2011-04-28 09:41:46.659607841 -0400
+@@ -128,6 +128,11 @@
+ 
+     @param base: a YumBase object.
+     """
++    #  This interacts badly with 6.1 rhnplugin, as their repos. aren't setup in
++    # inithook, unless they are cached.
++    #  Turning off atm.
++    if True: return
++
+     if base.repos.listEnabled():
+         return
+ 
+Only in yum-3.2.29: yumcommands.py~

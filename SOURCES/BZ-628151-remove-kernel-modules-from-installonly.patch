@@ -1,0 +1,32 @@
+diff -ru yum-3.2.29-orig/docs/yum.conf.5 yum-3.2.29/docs/yum.conf.5
+--- yum-3.2.29-orig/docs/yum.conf.5	2011-01-13 15:39:30.778001529 -0500
++++ yum-3.2.29/docs/yum.conf.5	2011-01-13 15:41:07.361948839 -0500
+@@ -150,12 +150,15 @@
+ \fBinstallonlypkgs \fR
+ List of package provides that should only ever be installed, never updated.
+ Kernels in particular fall into this category. Defaults to kernel,
+-kernel-bigmem, kernel-enterprise, kernel-smp, kernel-modules, kernel-debug, 
++kernel-bigmem, kernel-enterprise, kernel-smp, kernel-debug, 
+ kernel-unsupported, kernel-source, kernel-devel, kernel-PAE, kernel-PAE-debug.
+ 
+ Note that because these are provides, and not just package names, kernel-devel
+ will also apply to kernel-debug-devel, etc.
+ 
++Note that "kernel-modules" is \fBnot\fR in this list, in RHEL-6, and so anything
++providing that is updated like any other package.
++
+ .IP
+ \fBinstallonly_limit \fR
+ Number of packages listed in installonlypkgs to keep installed at the same
+diff -ru yum-3.2.29-orig/yum/config.py yum-3.2.29/yum/config.py
+--- yum-3.2.29-orig/yum/config.py	2011-01-13 15:39:30.772959957 -0500
++++ yum-3.2.29/yum/config.py	2011-01-13 15:40:16.919033640 -0500
+@@ -648,7 +648,7 @@
+     username = Option()
+     password = Option()
+     installonlypkgs = ListOption(['kernel', 'kernel-bigmem',
+-            'kernel-enterprise','kernel-smp', 'kernel-modules', 'kernel-debug',
++            'kernel-enterprise','kernel-smp', 'kernel-debug',
+             'kernel-unsupported', 'kernel-source', 'kernel-devel', 'kernel-PAE',
+             'kernel-PAE-debug'])
+     # NOTE: If you set this to 2, then because it keeps the current kernel it

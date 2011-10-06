@@ -1,0 +1,29 @@
+diff -ru yum-3.2.27/yum/i18n.py yum-3.2.27-i18n/yum/i18n.py
+--- yum-3.2.27/yum/i18n.py	2010-02-17 15:56:03.000000000 -0500
++++ yum-3.2.27-i18n/yum/i18n.py	2010-03-24 16:42:51.000000000 -0400
+@@ -462,7 +462,14 @@
+     
+     return False
+     
+-try: 
++if True:
++  # Python-2.* sucks for i18n/UnicodeErrors ... so we turn it off. We've
++  # got most of the major stuff beaten in Fedora, so if you really want it
++  # change the above to False and have fun (just don't log bugs).
++  _ = dummy_wrapper
++  P_ = dummyP_wrapper
++else:
++  try:
+     '''
+     Setup the yum translation domain and make _() and P_() translation wrappers
+     available.
+@@ -472,7 +479,7 @@
+     t = gettext.translation('yum', fallback=True)
+     _ = t.ugettext
+     P_ = t.ungettext
+-except:
++  except:
+     '''
+     Something went wrong so we make a dummy _() wrapper there is just
+     returning the same text
+Only in yum-3.2.27-i18n/yum: i18n.py~

@@ -1,0 +1,14 @@
+diff -ru yum-3.2.29-orig/yum/__init__.py yum-3.2.29/yum/__init__.py
+--- yum-3.2.29-orig/yum/__init__.py	2011-02-21 15:09:54.465959862 -0500
++++ yum-3.2.29/yum/__init__.py	2011-02-21 15:16:40.109199241 -0500
+@@ -1944,7 +1944,8 @@
+                 if hasattr(urlgrabber.progress, 'text_meter_total_size'):
+                     urlgrabber.progress.text_meter_total_size(remote_size,
+                                                               local_size)
+-                if po.repoid not in done_repos:
++                # Don't check this atm. as it kills C-c.
++                if False and po.repoid not in done_repos:
+                     #  Check a single package per. repo. ... to give a hint to
+                     # the user on big downloads.
+                     result, errmsg = self.sigCheckPkg(po)
+Only in yum-3.2.29/yum: __init__.py~

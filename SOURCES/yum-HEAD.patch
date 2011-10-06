@@ -1,0 +1,475 @@
+diff --git a/docs/yum.8 b/docs/yum.8
+index 52f6b53..3b414e2 100644
+--- a/docs/yum.8
++++ b/docs/yum.8
+@@ -73,7 +73,7 @@ gnome\-packagekit application\&.
+ .br
+ .I \fR * version [ all | installed | available | group-* | nogroups* | grouplist | groupinfo ]
+ .br
+-.I \fR * history [info|list|summary|redo|undo|new|addon-info] 
++.I \fR * history [info|list|packages-list|summary|redo|undo|new|addon-info] 
+ .br
+ .I \fR * check
+ .br 
+@@ -316,8 +316,12 @@ The undo/redo commands take either a transaction id or the keyword last and
+ an offset from the last transaction (Eg. if you've done 250 transactions,
+ "last" refers to transaction 250, and "last-4" refers to transaction 246).
+ 
++The addon-info command takes a transaction ID, and the packages-list command
++takes a package (with wildcards).
++
+ In "history list" output the Altered column also gives some extra information
+-if there was something not good with the transaction.
++if there was something not good with the transaction (this is also shown at the
++end of the package column in the packages-list command).
+ 
+ .I \fB>\fR - The rpmdb was changed, outside yum, after the transaction.
+ .br
+diff --git a/etc/yum.bash b/etc/yum.bash
+index f4be628..1ccb83d 100644
+--- a/etc/yum.bash
++++ b/etc/yum.bash
+@@ -176,9 +176,13 @@ _yum()
+ {
+     COMPREPLY=()
+     local yum=$1
+-    local cur
+-    type _get_cword &>/dev/null && cur=`_get_cword` || cur=$2
+-    local prev=$3
++    local cur prev
++    local -a words
++    if type _get_comp_words_by_ref &>/dev/null ; then
++        _get_comp_words_by_ref cur prev words
++    else
++        cur=$2 prev=$3 words=("${COMP_WORDS[@]}")
++    fi
+     # Commands offered as completions
+     local cmds=( check check-update clean deplist distro-sync downgrade
+         groupinfo groupinstall grouplist groupremove help history info install
+@@ -186,12 +190,12 @@ _yum()
+         shell update upgrade version )
+ 
+     local i c cmd subcmd
+-    for (( i=1; i < ${#COMP_WORDS[@]}-1; i++ )) ; do
+-        [[ -n $cmd ]] && subcmd=${COMP_WORDS[i]} && break
++    for (( i=1; i < ${#words[@]}-1; i++ )) ; do
++        [[ -n $cmd ]] && subcmd=${words[i]} && break
+         # Recognize additional commands and aliases
+         for c in ${cmds[@]} check-rpmdb distribution-synchronization erase \
+             groupupdate grouperase localinstall localupdate whatprovides ; do
+-            [[ ${COMP_WORDS[i]} == $c ]] && cmd=$c && break
++            [[ ${words[i]} == $c ]] && cmd=$c && break
+         done
+     done
+ 
+@@ -251,7 +255,7 @@ _yum()
+                     COMPREPLY=( $( compgen -W 'info list summary undo redo
+                         new addon-info package-list' -- "$cur" ) )
+                     ;;
+-                undo|redo|addon|addon-info)
++                undo|redo|repeat|addon|addon-info)
+                     COMPREPLY=( $( compgen -W "last $( $yum -d 0 -C history \
+                         2>/dev/null | \
+                         sed -ne 's/^[[:space:]]*\([0-9]\{1,\}\).*/\1/p' )" \
+diff --git a/output.py b/output.py
+index b1d92e5..04b718b 100755
+--- a/output.py
++++ b/output.py
+@@ -1936,6 +1936,9 @@ to exit.
+             of a package(s) instead of via. transactions. """
+         tids = self.history.search(extcmds)
+         limit = None
++        if extcmds and not tids:
++            self.logger.critical(_('Bad transaction IDs, or package(s), given'))
++            return 1, ['Failed history packages-list']
+         if not tids:
+             limit = 20
+ 
+diff --git a/test/skipbroken-tests.py b/test/skipbroken-tests.py
+index 4e6b2c8..31482bc 100644
+--- a/test/skipbroken-tests.py
++++ b/test/skipbroken-tests.py
+@@ -669,7 +669,7 @@ class SkipBrokenTests(DepsolveTests):
+         self.tsInfo.addUpdate(u7, oldpo=i7)
+         self.assertEquals('ok', *self.resolveCode(skip=True))
+         # uncomment this line and the test will fail and you can see the output
+-        self.assertResult([i1])
++        # self.assertResult([i1])
+         
+     
+     
+diff --git a/yum.spec b/yum.spec
+index a1fbc72..65a2397 100644
+--- a/yum.spec
++++ b/yum.spec
+@@ -194,8 +194,8 @@ exit 0
+ %defattr(-,root,root)
+ %doc COPYING
+ %{_sysconfdir}/cron.daily/0yum.cron
+-%{_sysconfdir}/yum/yum-daily.yum
+-%{_sysconfdir}/yum/yum-weekly.yum
++%config(noreplace) %{_sysconfdir}/yum/yum-daily.yum
++%config(noreplace) %{_sysconfdir}/yum/yum-weekly.yum
+ %{_sysconfdir}/rc.d/init.d/yum-cron
+ %config(noreplace) %{_sysconfdir}/sysconfig/yum-cron
+ 
+diff --git a/yum/__init__.py b/yum/__init__.py
+index f6e8a6b..de393f1 100644
+--- a/yum/__init__.py
++++ b/yum/__init__.py
+@@ -349,7 +349,10 @@ class YumBase(depsolve.Depsolve):
+ 
+         # who are we:
+         self.conf.uid = os.geteuid()
+-        
++        # repos are ver/arch specific so add $basearch/$releasever
++        self.conf._repos_persistdir = os.path.normpath('%s/repos/%s/%s/'
++               % (self.conf.persistdir,  self.yumvar.get('basearch', '$basearch'),
++                  self.yumvar.get('releasever', '$releasever')))        
+         self.doFileLogSetup(self.conf.uid, self.conf.logfile)
+         self.verbose_logger.debug('Config time: %0.3f' % (time.time() - conf_st))
+         self.plugins.run('init')
+@@ -418,10 +421,7 @@ class YumBase(depsolve.Depsolve):
+             else:
+                 thisrepo.repo_config_age = repo_age
+                 thisrepo.repofile = repofn
+-                # repos are ver/arch specific so add $basearch/$releasever
+-                self.conf._repos_persistdir = os.path.normpath('%s/repos/%s/%s/'
+-                     % (self.conf.persistdir,  self.yumvar.get('basearch', '$basearch'),
+-                        self.yumvar.get('releasever', '$releasever')))
++
+                 thisrepo.base_persistdir = self.conf._repos_persistdir
+ 
+ 
+@@ -1437,10 +1437,11 @@ class YumBase(depsolve.Depsolve):
+         self.rpmdb.transactionResultVersion(frpmdbv)
+ 
+         # transaction has started - all bets are off on our saved ts file
+-        try:
+-            os.unlink(self._ts_save_file)
+-        except (IOError, OSError), e:
+-            pass
++        if self._ts_save_file is not None:
++            try:
++                os.unlink(self._ts_save_file)
++            except (IOError, OSError), e:
++                pass
+         self._ts_save_file = None
+         
+         errors = self.ts.run(cb.callback, '')
+@@ -1485,7 +1486,12 @@ class YumBase(depsolve.Depsolve):
+ 
+         
+         # drop out the rpm cache so we don't step on bad hdr indexes
+-        self.rpmdb.dropCachedDataPostTransaction(list(self.tsInfo))
++        if (self.ts.isTsFlagSet(rpm.RPMTRANS_FLAG_TEST) or
++            resultobject.return_code):
++            self.rpmdb.dropCachedData()
++        else:
++            self.rpmdb.dropCachedDataPostTransaction(list(self.tsInfo))
++
+         self.plugins.run('posttrans')
+         # sync up what just happened versus what is in the rpmdb
+         if not self.ts.isTsFlagSet(rpm.RPMTRANS_FLAG_TEST):
+@@ -1674,8 +1680,11 @@ class YumBase(depsolve.Depsolve):
+     def doLock(self, lockfile = YUM_PID_FILE):
+         """perform the yum locking, raise yum-based exceptions, not OSErrors"""
+         
+-        # if we're not root then lock the cache
+         if self.conf.uid != 0:
++            #  If we are a user, assume we are using the root cache ... so don't
++            # bother locking.
++            if self.conf.cache:
++                return
+             root = self.conf.cachedir
+             # Don't want <cachedir>/var/run/yum.pid ... just: <cachedir>/yum.pid
+             lockfile = os.path.basename(lockfile)
+@@ -1690,7 +1699,7 @@ class YumBase(depsolve.Depsolve):
+                 fd = open(lockfile, 'r')
+             except (IOError, OSError), e:
+                 msg = _("Could not open lock %s: %s") % (lockfile, e)
+-                raise Errors.LockError(1, msg)
++                raise Errors.LockError(errno.EPERM, msg)
+                 
+             try: oldpid = int(fd.readline())
+             except ValueError:
+@@ -1707,7 +1716,7 @@ class YumBase(depsolve.Depsolve):
+                     else:
+                         # Whoa. What the heck happened?
+                         msg = _('Unable to check if PID %s is active') % oldpid
+-                        raise Errors.LockError(1, msg, oldpid)
++                        raise Errors.LockError(errno.EPERM, msg, oldpid)
+                 else:
+                     # Another copy seems to be running.
+                     msg = _('Existing lock %s: another copy is running as pid %s.') % (lockfile, oldpid)
+@@ -1752,7 +1761,7 @@ class YumBase(depsolve.Depsolve):
+             if not msg.errno == errno.EEXIST: 
+                 # Whoa. What the heck happened?
+                 errmsg = _('Could not create lock at %s: %s ') % (filename, str(msg))
+-                raise Errors.LockError(msg.errno, errmsg, contents)
++                raise Errors.LockError(msg.errno, errmsg, int(contents))
+             return 0
+         else:
+             os.write(fd, contents)
+@@ -4557,16 +4566,25 @@ class YumBase(depsolve.Depsolve):
+                         keyurl, info['hexkeyid']))
+                     key_installed = True
+                     continue
+-
+                 # Try installing/updating GPG key
+                 if is_cakey:
++                    # know where the 'imported_cakeys' file is
++                    ikf = repo.base_persistdir + '/imported_cakeys'
+                     keytype = 'CA'
++                    cakeys  = []
++                    try:
++                        cakeys_d = open(ikf, 'r').read()
++                        cakeys = cakeys_d.split('\n')
++                    except (IOError, OSError):
++                        pass
++                    if str(info['hexkeyid']) in cakeys:
++                        key_installed = True
+                 else:
+                     keytype = 'GPG'
+-
+-                if repo.gpgcakey and info['has_sig'] and info['valid_sig']:
+-                    key_installed = True
+-                else:
++                    if repo.gpgcakey and info['has_sig'] and info['valid_sig']:
++                        key_installed = True
++                        
++                if not key_installed:
+                     self._getKeyImportMessage(info, keyurl, keytype)
+                     rc = False
+                     if self.conf.assumeyes:
+@@ -4587,7 +4605,18 @@ class YumBase(depsolve.Depsolve):
+                     raise Errors.YumBaseError, _('Key import failed')
+                 self.logger.info(_('Key imported successfully'))
+                 key_installed = True
+-
++                # write out the key id to imported_cakeys in the repos basedir
++                if is_cakey and key_installed:
++                    if info['hexkeyid'] not in cakeys:
++                        ikfo = open(ikf, 'a')
++                        try:
++                            ikfo.write(info['hexkeyid']+'\n')
++                            ikfo.flush()
++                            ikfo.close()
++                        except (IOError, OSError):
++                            # maybe a warning - but in general this is not-critical, just annoying to the user
++                            pass
++                        
+         if not key_installed:
+             raise Errors.YumBaseError, \
+                   _('The GPG keys listed for the "%s" repository are ' \
+diff --git a/yum/depsolve.py b/yum/depsolve.py
+index de2849a..3aaba0e 100644
+--- a/yum/depsolve.py
++++ b/yum/depsolve.py
+@@ -799,9 +799,9 @@ class Depsolve(object):
+                     continue
+                 done.add((po, err))
+                 self.verbose_logger.log(logginglevels.DEBUG_4,
+-                    _("%s from %s has depsolving problems") % (po, po.repoid))
++                    "SKIPBROKEN: %s from %s has depsolving problems" % (po, po.repoid))
+                 err = err.replace('\n', '\n  --> ')
+-                self.verbose_logger.log(logginglevels.DEBUG_4,"  --> %s" % err)
++                self.verbose_logger.log(logginglevels.DEBUG_4,"SKIPBROKEN:  --> %s" % err)
+             return (1, errors)
+ 
+         if not len(self.tsInfo):
+diff --git a/yumcommands.py b/yumcommands.py
+index ecce347..45cd209 100644
+--- a/yumcommands.py
++++ b/yumcommands.py
+@@ -972,6 +972,12 @@ class RepoListCommand(YumCommand):
+                     elif repo.mirrorlist:
+                         out += [base.fmtKeyValFill(_("Repo-mirrors : "),
+                                                    repo.mirrorlist)]
++                    if enabled and repo.urls:
++                        url = repo.urls[0]
++                        if len(repo.urls) > 1:
++                            url += ' (%d more)' % (len(repo.urls) - 1)
++                        out += [base.fmtKeyValFill(_("Repo-baseurl : "),
++                                                   url)]
+ 
+                     if not os.path.exists(repo.metadata_cookie):
+                         last = _("Unknown")
+diff --git a/yummain.py b/yummain.py
+index c64b140..9f9b7d4 100755
+--- a/yummain.py
++++ b/yummain.py
+@@ -23,6 +23,7 @@ import os.path
+ import sys
+ import logging
+ import time
++import errno
+ 
+ from yum import Errors
+ from yum import plugins
+@@ -99,12 +100,16 @@ def main(args):
+             if exception2msg(e) != lockerr:
+                 lockerr = exception2msg(e)
+                 logger.critical(lockerr)
+-            if not base.conf.exit_on_lock:
++            if (e.errno not in (errno.EPERM, errno.EACCES) and
++                not base.conf.exit_on_lock):
+                 logger.critical(_("Another app is currently holding the yum lock; waiting for it to exit..."))
+                 tm = 0.1
+                 if show_lock_owner(e.pid, logger):
+                     tm = 2
+                 time.sleep(tm)
++            elif e.errno in (errno.EPERM, errno.EACCES):
++                logger.critical(_("Can't create lock file; exiting"))
++                return 1
+             else:
+                 logger.critical(_("Another app is currently holding the yum lock; exiting as configured by exit_on_lock"))
+                 return 1
+commit 9d2c4e2b79456ad0243ae403ba76a9eb4ef159c8
+Author: Ricky Zhou <ricky@fedoraproject.org>
+Date:   Mon Feb 21 14:12:48 2011 -0500
+
+    Remove undefined variable (done in _RPMVerifyPackageFile). BZ 671198.
+
+diff --git a/yum/packages.py b/yum/packages.py
+index 8ffe51e..db3e973 100644
+--- a/yum/packages.py
++++ b/yum/packages.py
+@@ -1845,7 +1845,6 @@ class YumInstalledPackage(YumHeaderPackage):
+                 my_mode = my_st.st_mode
+                 if 'ghost' in ftypes: #  This is what rpm does, although it
+                     my_mode &= 0777   # doesn't usually get here.
+-                    mode    &= 0777
+                 if check_perms and pf.verify_mode and my_mode != pf.mode:
+                     prob = _PkgVerifyProb('mode', 'mode does not match', ftypes)
+                     prob.database_value = pf.mode
+commit 6a5d265a960cf37ae3f3cf71449584ffaf89f4c5
+Author: James Antill <james@and.org>
+Date:   Mon Feb 21 14:28:30 2011 -0500
+
+    The kernel packages are special, so skip normal processing. BZ 678969
+
+diff --git a/yum/__init__.py b/yum/__init__.py
+index 16aef1a..059095a 100644
+--- a/yum/__init__.py
++++ b/yum/__init__.py
+@@ -1029,6 +1029,11 @@ class YumBase(depsolve.Depsolve):
+         for txmbr in txmbrs:
+             if kern_pkgtup is not None and txmbr.pkgtup == kern_pkgtup:
+                 pass
++            elif kern_pkgtup is not None and txmbr.name == kern_pkgtup[0]:
++                #  We don't care if they've explicitly set protected on the
++                # kernel package. Because we don't allow you to uninstall the
++                # running one so it has _special_ semantics anyway.
++                continue
+             elif txmbr.name not in protected:
+                 continue
+             if txmbr.name not in bad_togo:
+commit 2b05f38df2a22d61366926eb36eb2743dcb409b1
+Author: Seth Vidal <skvidal@fedoraproject.org>
+Date:   Mon Feb 14 12:54:30 2011 -0500
+
+    store our yum saved transaction file content to the the history addon data for this transaction.
+
+diff --git a/yum/__init__.py b/yum/__init__.py
+index c160201..143a07e 100644
+--- a/yum/__init__.py
++++ b/yum/__init__.py
+@@ -1435,9 +1435,13 @@ class YumBase(depsolve.Depsolve):
+         # will be we store what we thought, not what happened (so it'll be an
+         # invalid cache).
+         self.rpmdb.transactionResultVersion(frpmdbv)
+-
+         # transaction has started - all bets are off on our saved ts file
+         if self._ts_save_file is not None:
++            # write the saved transaction data to the addon location in history
++            # so we can pull it back later if we need to
++            savetx_msg = open(self._ts_save_file, 'r').read()
++            self.history.write_addon_data('txfile', savetx_msg)
++
+             try:
+                 os.unlink(self._ts_save_file)
+             except (IOError, OSError), e:
+commit c76a066bfe113c4efc333751daf642d5ada43071
+Author: Seth Vidal <skvidal@fedoraproject.org>
+Date:   Mon Feb 14 15:35:35 2011 -0500
+
+    name it 'saved_tx' so james doesn't misread it like an old man.
+
+diff --git a/yum/__init__.py b/yum/__init__.py
+index 143a07e..e395cc5 100644
+--- a/yum/__init__.py
++++ b/yum/__init__.py
+@@ -1440,7 +1440,7 @@ class YumBase(depsolve.Depsolve):
+             # write the saved transaction data to the addon location in history
+             # so we can pull it back later if we need to
+             savetx_msg = open(self._ts_save_file, 'r').read()
+-            self.history.write_addon_data('txfile', savetx_msg)
++            self.history.write_addon_data('saved_tx', savetx_msg)
+ 
+             try:
+                 os.unlink(self._ts_save_file)
+commit 5cd470cde22f2058f004db6668d41dda1b27c2c0
+Author: James Antill <james@and.org>
+Date:   Mon Mar 14 11:23:15 2011 -0400
+
+    Add saved_tx to default_addons, for history info output.
+
+diff --git a/output.py b/output.py
+index 08fe0e3..1613c29 100755
+--- a/output.py
++++ b/output.py
+@@ -1741,7 +1741,7 @@ to exit.
+             addon_info = self.history.return_addon_data(old.tid)
+ 
+             # for the ones we create by default - don't display them as there
+-            default_addons = set(['config-main', 'config-repos'])
++            default_addons = set(['config-main', 'config-repos', 'saved_tx'])
+             non_default = set(addon_info).difference(default_addons)
+             if len(non_default) > 0:
+                     print _("Additional non-default information stored: %d" 
+commit b0cfb31118d35db42c8d6be305a79f5d376be579
+Author: James Antill <james@and.org>
+Date:   Tue Mar 29 10:29:03 2011 -0400
+
+    Tweak "group X has no pkgs." warning, try to deal with cond. pkgs. BZ 655281
+
+diff --git a/yum/__init__.py b/yum/__init__.py
+index 36fc203..d1f07d0 100644
+--- a/yum/__init__.py
++++ b/yum/__init__.py
+@@ -2830,9 +2830,7 @@ class YumBase(depsolve.Depsolve):
+             if 'optional' in package_types:
+                 pkgs.extend(thisgroup.optional_packages)
+ 
+-            if not pkgs:
+-                self.logger.critical(_('Warning: Group %s does not have any packages.'), thisgroup.groupid)
+-
++            old_txmbrs = len(txmbrs_used)
+             for pkg in pkgs:
+                 self.verbose_logger.log(logginglevels.DEBUG_2,
+                     _('Adding package %s from group %s'), pkg, thisgroup.groupid)
+@@ -2850,6 +2848,7 @@ class YumBase(depsolve.Depsolve):
+             if enable_group_conditionals is not None: # has to be this way so we can set it to False
+                 group_conditionals = enable_group_conditionals
+ 
++            count_cond_test = 0
+             if group_conditionals:
+                 for condreq, cond in thisgroup.conditional_packages.iteritems():
+                     if self.isPackageInstalled(cond):
+@@ -2882,10 +2881,15 @@ class YumBase(depsolve.Depsolve):
+                                 pkgs = use
+                                
+                         pkgs = packagesNewestByName(pkgs)
++                        count_cond_test += len(pkgs)
+ 
+                         if cond not in self.tsInfo.conditionals:
+                             self.tsInfo.conditionals[cond] = []
+                         self.tsInfo.conditionals[cond].extend(pkgs)
++            if len(txmbrs_used) == old_txmbrs:
++                self.logger.critical(_('Warning: Group %s does not have any packages.'), thisgroup.groupid)
++                if count_cond_test:
++                    self.logger.critical(_('Group %s does have %u conditional packages, which may get installed.'), count_cond_test)
+         return txmbrs_used
+ 
+     def deselectGroup(self, grpid, force=False):

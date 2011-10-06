@@ -1,0 +1,93 @@
+commit c358f26b8c54a28cc8cc99bac3aa6c90ec3a14d4
+Author: James Antill <james@and.org>
+Date:   Wed Mar 9 10:21:14 2011 -0500
+
+    Catch PackageSackError from warn checks, BZ 634595.
+
+diff --git a/yummain.py b/yummain.py
+index 32c65aa..b4d90e4 100755
+--- a/yummain.py
++++ b/yummain.py
+@@ -76,6 +76,15 @@ def main(args):
+             return 200
+         return 0
+ 
++    def rpmdb_warn_checks():
++        try:
++            probs = base._rpmdb_warn_checks(out=verbose_logger.info, warn=False)
++        except YumBaseError, e:
++            # This is mainly for PackageSackError from rpmdb.
++            verbose_logger.info(_(" Yum checks failed: %s"), exception2msg(e))
++            probs = []
++        if not probs:
++            verbose_logger.info(_(" You could try running: rpm -Va --nofiles --nodigest"))
+ 
+     logger = logging.getLogger("yum.main")
+     verbose_logger = logging.getLogger("yum.verbose.main")
+@@ -182,8 +191,7 @@ def main(args):
+             logger.critical(prefix, msg.replace('\n', '\n' + prefix2nd))
+         if not base.conf.skip_broken:
+             verbose_logger.info(_(" You could try using --skip-broken to work around the problem"))
+-        if not base._rpmdb_warn_checks(out=verbose_logger.info, warn=False):
+-            verbose_logger.info(_(" You could try running: rpm -Va --nofiles --nodigest"))
++        warn_checks()
+         if unlock(): return 200
+         return 1
+     elif result == 2:
+@@ -215,8 +223,7 @@ def main(args):
+         (result, resultmsgs) = return_code
+         for msg in resultmsgs:
+             logger.critical("%s", msg)
+-        if not base._rpmdb_warn_checks(out=verbose_logger.info, warn=False):
+-            verbose_logger.info(_(" You could try running: rpm -Va --nofiles --nodigest"))
++        warn_checks()
+         return_code = result
+         if base._ts_save_file:
+             verbose_logger.info(_("Your transaction was saved, rerun it with: yum load-transaction %s") % base._ts_save_file)
+commit 1903fb47f37be15089896ff3783d975f9bc318d2
+Author: James Antill <james@and.org>
+Date:   Fri Mar 11 11:02:51 2011 -0500
+
+    Commit warn_checks change.
+
+diff --git a/yummain.py b/yummain.py
+index b4d90e4..d0b8251 100755
+--- a/yummain.py
++++ b/yummain.py
+@@ -191,7 +191,7 @@ def main(args):
+             logger.critical(prefix, msg.replace('\n', '\n' + prefix2nd))
+         if not base.conf.skip_broken:
+             verbose_logger.info(_(" You could try using --skip-broken to work around the problem"))
+-        warn_checks()
++        rpmdb_warn_checks()
+         if unlock(): return 200
+         return 1
+     elif result == 2:
+@@ -223,7 +223,7 @@ def main(args):
+         (result, resultmsgs) = return_code
+         for msg in resultmsgs:
+             logger.critical("%s", msg)
+-        warn_checks()
++        rpmdb_warn_checks()
+         return_code = result
+         if base._ts_save_file:
+             verbose_logger.info(_("Your transaction was saved, rerun it with: yum load-transaction %s") % base._ts_save_file)
+commit deb857b109f24005489ade902ab6f483d5362138
+Author: James Antill <james@and.org>
+Date:   Fri Mar 25 11:57:34 2011 -0400
+
+    Add Errors to front of YumBaseError, too many spellings of the same thing :(
+
+diff --git a/yummain.py b/yummain.py
+index d0b8251..1b94153 100755
+--- a/yummain.py
++++ b/yummain.py
+@@ -79,7 +79,7 @@ def main(args):
+     def rpmdb_warn_checks():
+         try:
+             probs = base._rpmdb_warn_checks(out=verbose_logger.info, warn=False)
+-        except YumBaseError, e:
++        except Errors.YumBaseError, e:
+             # This is mainly for PackageSackError from rpmdb.
+             verbose_logger.info(_(" Yum checks failed: %s"), exception2msg(e))
+             probs = []
