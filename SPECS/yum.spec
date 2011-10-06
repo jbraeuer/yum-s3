@@ -7,7 +7,7 @@
 Summary: RPM package installer/updater/manager
 Name: yum
 Version: 3.2.29
-Release: 4001%{?dist}
+Release: 4002%{?dist}
 License: GPLv2+
 Group: System Environment/Base
 Source0: http://yum.baseurl.org/download/3.2/%{name}-%{version}.tar.gz
@@ -40,6 +40,9 @@ Patch65: yum-3.2.27-i18n-off.patch
 Patch66: BZ-628151-remove-kernel-modules-from-installonly.patch
 Patch67: BZ-528738-bugtracker.patch
 Patch68: BZ-700035-rhnplugin-uncached-repos.patch
+
+# NumberFour patches
+Patch4001: use-default-grabber.patch
 
 URL: http://yum.baseurl.org/
 BuildArch: noarch
@@ -171,6 +174,9 @@ Install this package if you want auto yum updates nightly via cron.
 %patch66 -p1
 %patch67 -p1
 %patch68 -p1
+
+# NumberFour specific patches...
+%patch4001 -p1
 
 # Hack disable translation tests...
 cp /bin/true test/check-po-yes-no.py
