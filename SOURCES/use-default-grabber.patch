@@ -1,31 +1,32 @@
-diff --git a/yumRepo.py b/yumRepo.py
-index 639a49a..8f16d7a 100644
+diff --git a/yum/yumRepo.py b/yum/yumRepo.py
+index 6ba058c..69e5ba4 100644
 --- a/yum/yumRepo.py
 +++ b/yum/yumRepo.py
-@@ -782,24 +782,9 @@ class YumRepository(Repository, config.RepoConf):
+@@ -796,15 +796,18 @@ class YumRepository(Repository, config.RepoConf):
                  verbose_logger.log(logginglevels.DEBUG_2, "Error getting package from media; falling back to url %s" %(e,))
-
+ 
          if url and scheme != "media":
--            ug = URLGrabber(keepalive = self.keepalive,
--                            bandwidth = self.bandwidth,
--                            retry = self.retries,
--                            throttle = self.throttle,
--                            progress_obj = self.callback,
+-            ugopts = self._default_grabopts(cache=cache)
+-            ug = URLGrabber(progress_obj = self.callback,
 -                            copy_local = copy_local,
 -                            reget = reget,
--                            proxies = self.proxy_dict,
 -                            failure_callback = self.failure_obj,
 -                            interrupt_callback=self.interrupt_callback,
--                            timeout=self.timeout,
 -                            checkfunc=checkfunc,
--                            http_headers=headers,
--                            ssl_ca_cert = self.sslcacert
--                            )
--
+-                            size=size,
+-                            **ugopts)
++#            ugopts = self._default_grabopts(cache=cache)
++#            ug = URLGrabber(progress_obj = self.callback,
++#                            copy_local = copy_local,
++#                            reget = reget,
++#                            failure_callback = self.failure_obj,
++#                            interrupt_callback=self.interrupt_callback,
++#                            checkfunc=checkfunc,
++#                            size=size,
++#                            **ugopts)
++#
 +            ug = self._getgrab()
-             ug.opts.user_agent = default_grabber.opts.user_agent
--
-+
++            ug.opts.user_agent = self._default_grabopts(cache=cache)
+ 
              remote = url + '/' + relative
-
-             try:
+ 
