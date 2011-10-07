@@ -15,4 +15,5 @@ buildroot=$(dirname $(readlink -f "$0"))
 mkdir -p ${buildroot}/{RPMS,BUILD,BUILDROOT}
 rpmbuild --verbose \
     --define "_topdir ${buildroot}" \
+    --define "_rpmdir ${buildroot}/RPMS" \
     -bb "${buildroot}/SPECS/yum.spec"
